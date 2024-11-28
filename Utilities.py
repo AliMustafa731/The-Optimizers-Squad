@@ -8,7 +8,7 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
 
     '''
     This is the data loader used to train a siamese network that uses contrastive loss.
-    The dataset returns two images of either the same person or different people, along with a labeled that indicates this fact.
+    The dataset returns two images of either the same person or different people, along with a label that indicates this fact.
     '''
 
     def __init__(self, dataset_path, batch_size, input_shape=(250, 250), *args, **kwargs):
