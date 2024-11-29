@@ -1,3 +1,4 @@
-Data
-Data/lfw_funneled
-__pycache__
+*
+!*.py
+!*.ipynb
+!.gitignore
