@@ -39,7 +39,7 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
 
         # calculate the total number of batches
         min_length = min(len(self.multi_image_classes_paths), len(self.single_image_classes_paths))
-        self.batches_num = np.ceil(min_length / self.half_batch_size).astype(np.int32)
+        self.batches_num = np.floor(min_length / self.half_batch_size).astype(np.int32)
     
     # load an image from a file specified by 'path'
     # returns numpy array
