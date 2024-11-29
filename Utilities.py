@@ -3,58 +3,86 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1" #to suppress some unnecessary warnings
 
 import tensorflow as tf, keras, numpy as np, random
 
-
 class DataLoaderContrastive(tf.keras.utils.Sequence):
 
-    '''
-    This is the data loader used to train a siamese network that uses contrastive loss.
-    The dataset returns two images of either the same person or different people, along with a label that indicates this fact.
-    '''
-
-    def __init__(self, dataset_path, batch_size, input_shape=(250, 250), *args, **kwargs):
+    def __init__(self, dataset_root_path, batch_size, input_shape=(250, 250), *args, **kwargs):
         super().__init__(**kwargs)
-
+        
         self.input_shape = input_shape
         self.batch_size = batch_size
+        self.half_batch_size = batch_size // 2
 
-        self.dataset_path = dataset_path
-        self.classes_paths = []
+        self.dataset_root_path = dataset_root_path
+        self.multi_image_classes_paths = []      # list containing paths of classes that have two or more images
+        self.single_image_classes_paths = []     # list containing paths of classes that have only one images
         
-        for dir in os.scandir(self.dataset_path):
-            self.classes_paths.append([])
+        # scan all classes directories
+        for class_dir in os.scandir(dataset_root_path):
+            files = os.listdir(class_dir.path)
             
-            for file in os.scandir(dir.path):
-                if file.is_file():
-                    self.classes_paths[-1].append(file.path)
-        
+            if len(files) > 1:
+                # this path contains more than one file (image) of the same class (person)
+                self.multi_image_classes_paths.append([])
+                for file in files:
+                    self.multi_image_classes_paths[-1].append(os.path.join(class_dir.path, file))
+            else:
+                # this path conatins only one file (image) of the same class (person)
+                self.single_image_classes_paths.append([])
+                self.single_image_classes_paths[-1].append(os.path.join(class_dir.path, files[0]))
+
+        self.all_classes_paths = self.single_image_classes_paths + self.multi_image_classes_paths
+
+        # shuffle the paths of images of the dataset
+        np.random.shuffle(self.all_classes_paths)
+        np.random.shuffle(self.single_image_classes_paths)
+        np.random.shuffle(self.multi_image_classes_paths)
+
         # calculate the total number of batches
-        self.batches_num = np.ceil(len(self.classes_paths) / self.batch_size).astype(np.int32)
+        min_length = min(len(self.multi_image_classes_paths), len(self.single_image_classes_paths))
+        self.batches_num = np.ceil(min_length / self.half_batch_size).astype(np.int32)
     
+    # load an image from a file specified by 'path'
+    # returns numpy array
     def load_img(self, path):
         image = keras.preprocessing.image.load_img(path)
         image_arr = keras.preprocessing.image.img_to_array(image)
         return image_arr / 255
-        
+    
     # the training algorithm (model.fit()) will call this function to get the n'th batch of the dataset
     def __getitem__(self, n):
-        
-        paths_batch = self.classes_paths[n*self.batch_size : (n+1)*self.batch_size]
 
         X1 = np.zeros((self.batch_size, self.input_shape[1], self.input_shape[0], 3))
         X2 = np.zeros((self.batch_size, self.input_shape[1], self.input_shape[0], 3))
         Y = np.zeros((self.batch_size, 1))
 
-        for i in range(self.batch_size):
-            sample_class_1 = random.choice(paths_batch)
-            sample_class_2 = random.choice(paths_batch)
+        # make "half-batch-size" of similar pairs
+        multi_image_classes_batch = self.multi_image_classes_paths[n*self.half_batch_size : (n+1)*self.half_batch_size]
 
-            X1[i] = self.load_img(random.choice(sample_class_1))
-            X2[i] = self.load_img(random.choice(sample_class_2))
+        for i in range(self.half_batch_size):
+            # make "half-batch-size" of similar pairs
+
+            # remember that each class in "similar_batch_sample" has two images or more!
+            # take two images from the 'i'th class (they will be shuffeled at the end of each epoch)
+            similar_sub_images = multi_image_classes_batch[i]
             
-            if sample_class_1 == sample_class_2:
-                Y[i] = 1
+            X1[i] = self.load_img(similar_sub_images[0])
+            X2[i] = self.load_img(similar_sub_images[1])
+            Y[i] = 1
+
+            # make another "half-batch-size" of dissimilar pairs
+
+            # remember that we can pair one class from "similar" group with another from "dissimilar" group
+            # to make a "dissimilar" pair. in other words, we can take the sample from the whole dataset!
+            dissimilar_pair_sample = random.sample(self.all_classes_paths, 2)
+
+            X1[i + self.half_batch_size] = self.load_img(dissimilar_pair_sample[0][0])
+            X2[i + self.half_batch_size] = self.load_img(dissimilar_pair_sample[1][0])
+            
+            # account for the damn small probability of getting two similar classes!
+            if dissimilar_pair_sample[0] == dissimilar_pair_sample[1]:
+                Y[i + self.half_batch_size] = 1
             else:
-                Y[i] = 0
+                Y[i + self.half_batch_size] = 0
         
         #Since the model has two inputs, X1 and X2 has to be grouped into a tuple.
         return (X1, X2), Y
@@ -66,7 +94,12 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
     # called at the end of the epoch
     def on_epoch_end(self):
         # shuffle the paths of images at the end of each epoch
-        np.random.shuffle(self.classes_paths)
+        np.random.shuffle(self.all_classes_paths)
+        np.random.shuffle(self.single_image_classes_paths)
+        np.random.shuffle(self.multi_image_classes_paths)
+
+        for cls in self.multi_image_classes_paths:
+            np.random.shuffle(cls)
 
 
 def get_dataset_with_prefetching(dataset_root_path, batch_size = 32, image_size = (250, 250)):
