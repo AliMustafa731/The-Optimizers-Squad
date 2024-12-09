@@ -14,7 +14,7 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
 
             'batch_size': batch size
 
-            'positive_ratio': positive to negative ratio, must be in range [0.0, 1.0]
+            'positive_ratio': positive to negative ratio of pairs for each batch, must be in range [0.0, 1.0]
 
             'img_size': width and height of image
     '''
@@ -113,6 +113,6 @@ def get_dataset_with_prefetching(dataset_root_path, batch_size = 32, image_size 
 
     return tf.data.Dataset.from_generator(
         DataLoaderContrastive, 
-        args = [dataset_root_path, batch_size, (h, w)], 
+        args = [dataset_root_path, batch_size, 0.2, (h, w)], 
         output_signature = ((tf.TensorSpec(shape = (batch_size, h, w, 3), dtype = tf.float32), tf.TensorSpec(shape = (batch_size, h, w, 3), dtype = tf.float32)), tf.TensorSpec(shape = (batch_size, 1), dtype = tf.float32))
     ).prefetch(tf.data.AUTOTUNE)
