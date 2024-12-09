@@ -104,7 +104,7 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
         # shuffle the paths of the images of the dataset
         np.random.shuffle(self.classes_paths)
 
-def get_dataset_with_prefetching(dataset_root_path, batch_size = 32, image_size = (250, 250)):
+def get_dataset_with_prefetching(dataset_root_path, batch_size = 32, positive_ratio=0.2, image_size = (250, 250)):
     '''
         This is a simple function that turns a data loader into a tensorflow dataset with prefetching enabled 
         for better performance when training.
@@ -113,6 +113,6 @@ def get_dataset_with_prefetching(dataset_root_path, batch_size = 32, image_size 
 
     return tf.data.Dataset.from_generator(
         DataLoaderContrastive, 
-        args = [dataset_root_path, batch_size, 0.2, (h, w)], 
+        args = [dataset_root_path, batch_size, positive_ratio, (h, w)], 
         output_signature = ((tf.TensorSpec(shape = (batch_size, h, w, 3), dtype = tf.float32), tf.TensorSpec(shape = (batch_size, h, w, 3), dtype = tf.float32)), tf.TensorSpec(shape = (batch_size, 1), dtype = tf.float32))
     ).prefetch(tf.data.AUTOTUNE)
