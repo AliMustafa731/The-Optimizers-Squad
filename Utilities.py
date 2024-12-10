@@ -5,9 +5,10 @@ import tensorflow as tf, keras, numpy as np, random
 
 
 # load an image from a file specified by 'path', returns numpy array
-def load_img(path):
+def load_img(path, img_size):
     image = keras.preprocessing.image.load_img(path)
     image_arr = keras.preprocessing.image.img_to_array(image)
+    image_arr = tf.image.resize(image_arr, img_size)
     return image_arr / 255
 
 
@@ -60,12 +61,12 @@ class DataLoaderTriplet(tf.keras.utils.Sequence):
             positive = person_1_images[1]
             negative = random.sample(person_2, 1)[0]
             
-            X1[i] = load_img(positive)
-            X2[i] = load_img(anchor)
-            X3[i] = load_img(negative)
+            X1[i] = load_img(positive, self.img_size)
+            X2[i] = load_img(anchor, self.img_size)
+            X3[i] = load_img(negative, self.img_size)
         
         # since the model has three inputs, X1(postive), X2(anchor) and X3(negative) has to be grouped into a tuple.
-        return (X1, X2, X3), ()
+        return (X1, X2, X3)
 
     # returns the number of batches in the dataset
     def __len__(self):
@@ -136,8 +137,8 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
             person_1 = sub_batch_1[i]
 
             person_1_images = random.sample(person_1, 2)
-            X1[i] = load_img(person_1_images[0])
-            X2[i] = load_img(person_1_images[1])
+            X1[i] = load_img(person_1_images[0], self.img_size)
+            X2[i] = load_img(person_1_images[1], self.img_size)
             Y[i] = 1
 
         # make another sub-batch of dissimilar pairs
@@ -145,8 +146,8 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
             person_2 = sub_batch_2[i]
             person_3 = sub_batch_3[i]
 
-            X1[i + num_p] = load_img(random.sample(person_2, 1)[0])
-            X2[i + num_p] = load_img(random.sample(person_3, 1)[0])
+            X1[i + num_p] = load_img(random.sample(person_2, 1)[0], self.img_size)
+            X2[i + num_p] = load_img(random.sample(person_3, 1)[0], self.img_size)
             Y[i + num_p] = 0
         
         # Since the model has two inputs, X1 and X2 has to be grouped into a tuple.
@@ -162,7 +163,7 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
         np.random.shuffle(self.classes_paths)
 
 
-def get_dataset_with_prefetching(dataset_root_path, batch_size = 32, positive_ratio=0.2, image_size = (250, 250)):
+def get_dataset_contrastive_with_prefetching(dataset_root_path, batch_size = 32, positive_ratio=0.2, image_size = (250, 250)):
     '''
         This is a simple function that turns a data loader into a tensorflow dataset with prefetching enabled 
         for better performance when training.
@@ -173,4 +174,17 @@ def get_dataset_with_prefetching(dataset_root_path, batch_size = 32, positive_ra
         DataLoaderContrastive, 
         args = [dataset_root_path, batch_size, positive_ratio, (h, w)], 
         output_signature = ((tf.TensorSpec(shape = (batch_size, h, w, 3), dtype = tf.float32), tf.TensorSpec(shape = (batch_size, h, w, 3), dtype = tf.float32)), tf.TensorSpec(shape = (batch_size, 1), dtype = tf.float32))
+    ).prefetch(tf.data.AUTOTUNE)
+
+def get_dataset_triplet_with_prefetching(dataset_root_path, batch_size = 32, image_size = (250, 250)):
+    '''
+        This is a simple function that turns a data loader into a tensorflow dataset with prefetching enabled 
+        for better performance when training.
+    '''
+    h, w = image_size
+
+    return tf.data.Dataset.from_generator(
+        DataLoaderTriplet, 
+        args = [dataset_root_path, batch_size, (h, w)], 
+        output_signature = ((tf.TensorSpec(shape = (batch_size, h, w, 3), dtype = tf.float32), tf.TensorSpec(shape = (batch_size, h, w, 3), dtype = tf.float32), tf.TensorSpec(shape = (batch_size, h, w, 3), dtype = tf.float32)))
     ).prefetch(tf.data.AUTOTUNE)
