@@ -150,7 +150,7 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
             Y[i + num_p] = 0
         
         # Since the model has two inputs, X1 and X2 has to be grouped into a tuple.
-        return (X1, X2), (Y)
+        return (X1, X2), Y
 
     # returns the number of batches in the dataset
     def __len__(self):
