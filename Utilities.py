@@ -109,7 +109,7 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
         '''
             calculate the total number of batches that would cover the whole dataset in a single epoch,
             The dataset will be divided into groups of three sub-batches,
-            - One sub-batch is used for simialr pairs, each class images is paired with another image from the same class,
+            - One sub-batch is used for similar pairs, each class images is paired with another image from the same class,
             - The other two sub-batches are used to pair with each other to make dissimilar pairs
             The final result is the concatenation of the two sub-batches, with size of (batch_size)
         '''
@@ -199,6 +199,21 @@ def get_dataset_triplet_with_prefetching(dataset_root_path, batch_size = 32, ima
     Models
 """
 
+class L2Normalization(keras.Layer):
+    """
+    Custom L2Normalization layer.
+    This is used to normalize the embeddings obtained from 
+    the embedding model.
+    Ensures the output embeddings lie on a unit hypersphere.
+    """
+    def __init__(self, **kwargs):
+        super(L2Normalization, self).__init__(**kwargs)
+
+    def call(self, inputs):
+        # Perform L2 normalization along the last axis
+        return tf.math.l2_normalize(inputs, axis=-1)
+
+
 @keras.saving.register_keras_serializable("Patches")
 class Patches(keras.layers.Layer):
     """
@@ -210,7 +225,7 @@ class Patches(keras.layers.Layer):
         patch_size: The size length of each patch (assume square patches)
     """
     def __init__(self, patch_size, **kwargs):
-        super().__init__(**kwargs)
+        super(Patches, self).__init__(**kwargs)
         self.patch_size = patch_size
     
     def call(self, images):
@@ -247,7 +262,7 @@ class PatchEncoder(keras.layers.Layer):
         projection_dim: The required projection size of each patch.
     """
     def __init__(self, num_patches, projection_dim, **kwargs):
-        super().__init__(**kwargs)
+        super(PatchEncoder, self).__init__(**kwargs)
         self.num_patches = num_patches
         self.projection_dim = projection_dim
         self.projection = keras.layers.Dense(units = self.projection_dim)
@@ -270,7 +285,7 @@ class PatchEncoder(keras.layers.Layer):
         return {**config, 'num_patches' : self.num_patches, 'projection_dim' : self.projection_dim}
 
 
-def mlp(x, hidden_units, dropout_rate):
+def mlp(x, hidden_units, dropout_rate, projection_dim):
     """
     This function implements a multilayer perceptron that will be used 
     inside the transformer after each multihead attention layer.
@@ -278,18 +293,24 @@ def mlp(x, hidden_units, dropout_rate):
     hidden_units: The number of neurons in each layer.
 
     dropout_rate: The dropout rate to be used between each hidden unit.
+    
+    projection_dim: The number of neurons in the output of the mlp.
     """
 
-    for units in hidden_units:
+    for units in hidden_units + [projection_dim]:
         x = keras.layers.Dense(units, activation = keras.activations.gelu)(x)
         x = keras.layers.Dropout(dropout_rate)(x)
     return x
 
 
-def get_embedding_model(projection_dim = 192, transformer_layers = 8, num_heads = 8, transformer_units = [1024, 192], embedding_size = 128):
+def get_embedding_model(projection_dim = 192, transformer_layers = 8, num_heads = 10, transformer_units = [256], embedding_size = 128, patch_size = 1, cnn_feature_map_layer = 'conv5_block3_out'):
     """
         This function returns the main model that will be used
         to calculate the embeddings of faces.
+
+        The model used here relies on resnet50 for the cnn part
+        and a custom transformer encoder for the ViT part.
+
         It accepts images of size image_size and it returns an 
         embedding feature vector of size embedding_size.
 
@@ -304,8 +325,15 @@ def get_embedding_model(projection_dim = 192, transformer_layers = 8, num_heads 
         transformer_units: The number of neurons inside the transformer for the
                             mlp sublayer.
 
-        embedding_size: The final output size of the model.                   
+        embedding_size: The final output size of the model.  
+
+        patch_size: The number of pixels in each patch.
+
+        cnn_feature_map_layer: The resnet50 layer that will be used to extract
+                               the feature map from and feed it into the
+                               transformer.                 
     """
+
     #CNN part
     image_size = 224
     
@@ -317,7 +345,7 @@ def get_embedding_model(projection_dim = 192, transformer_layers = 8, num_heads 
     
 
     #get the output layer of the cnn that will be fed into the transformer
-    resnet50_output_layer = resnet50.get_layer('conv3_block4_out')
+    resnet50_output_layer = resnet50.get_layer(cnn_feature_map_layer)
     resnet50_output = resnet50_output_layer.output
     
     #cut the cnn
@@ -329,7 +357,6 @@ def get_embedding_model(projection_dim = 192, transformer_layers = 8, num_heads 
     #size of the input feature map into the transformer
     resnet50_output_feature_map_size = resnet50_output_layer.output.shape[1]
     
-    patch_size = 7
 
     # calculate the total number of patches that will enter into the transformer
     num_patches = (resnet50_output_feature_map_size//patch_size)**2
@@ -367,7 +394,7 @@ def get_embedding_model(projection_dim = 192, transformer_layers = 8, num_heads 
         x3 = keras.layers.LayerNormalization(epsilon = 1e-9)(x2)
 
         #MLP
-        x3 = mlp(x3, hidden_units = transformer_units, dropout_rate = 0.1)
+        x3 = mlp(x3, hidden_units = transformer_units, dropout_rate = 0.1, projection_dim = projection_dim)
 
         #skip connection 2
         encoded_patches = keras.layers.Add()([x3, x2])
@@ -375,11 +402,17 @@ def get_embedding_model(projection_dim = 192, transformer_layers = 8, num_heads 
     #Get only the first element in the sequence for all batches and all neurons 
     transformer_output = encoded_patches[:, 0, :]
     transformer_output = keras.layers.Dropout(0.5)(transformer_output)
+    
+    #build the final mlp
     outputs = keras.layers.Dense(1024, activation = 'relu')(transformer_output)
     outputs = keras.layers.Dropout(0.5)(outputs)
+    
     #set the output activation to linear since we will use either
     #contrastive loss or triplet loss, and the distance metric is
     #the euclidean distance
     outputs = keras.layers.Dense(embedding_size, activation = 'linear')(outputs)
+
+    #normalize the embedding so that it lies on a unit hypersphere
+    outputs = L2Normalization()(outputs)
     
     return keras.models.Model(inputs = inputs, outputs = outputs)
