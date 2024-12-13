@@ -303,12 +303,12 @@ def mlp(x, hidden_units, dropout_rate, projection_dim):
     return x
 
 
-def get_embedding_model(projection_dim = 192, transformer_layers = 8, num_heads = 10, transformer_units = [256], embedding_size = 128, patch_size = 1, cnn_feature_map_layer = 'conv5_block3_out'):
+def get_embedding_model(projection_dim = 128, transformer_layers = 5, num_heads = 12, transformer_units = [256], embedding_size = 128, patch_size = 1, cnn_feature_map_layer = 'top_activation', image_size = 128):
     """
         This function returns the main model that will be used
         to calculate the embeddings of faces.
 
-        The model used here relies on resnet50 for the cnn part
+        The model used here relies on efficient_net_b1 for the cnn part
         and a custom transformer encoder for the ViT part.
 
         It accepts images of size image_size and it returns an 
@@ -329,41 +329,39 @@ def get_embedding_model(projection_dim = 192, transformer_layers = 8, num_heads 
 
         patch_size: The number of pixels in each patch.
 
-        cnn_feature_map_layer: The resnet50 layer that will be used to extract
+        cnn_feature_map_layer: The efficient_net_b1 layer that will be used to extract
                                the feature map from and feed it into the
                                transformer.                 
     """
 
     #CNN part
-    image_size = 224
     
     #get the cnn
-    resnet50 = keras.applications.ResNet50(
-        include_top = False, weights = 'imagenet', 
+    efficient_net_b1 = keras.applications.EfficientNetV2B1(
+        include_top = False, 
         input_shape = (image_size, image_size, 3)
     )
     
-
     #get the output layer of the cnn that will be fed into the transformer
-    resnet50_output_layer = resnet50.get_layer(cnn_feature_map_layer)
-    resnet50_output = resnet50_output_layer.output
+    efficient_net_b1_output_layer = efficient_net_b1.get_layer(cnn_feature_map_layer)
+    efficient_net_b1_output = efficient_net_b1_output_layer.output
     
     #cut the cnn
-    cnn = keras.models.Model(inputs = resnet50.inputs, outputs = resnet50_output)
+    cnn = keras.models.Model(inputs = efficient_net_b1.input, outputs = efficient_net_b1_output)
 
     #transformer part
 
-    #get the size of the feature map output of resnet50, which will be the same
+    #get the size of the feature map output of efficient_net_b1, which will be the same
     #size of the input feature map into the transformer
-    resnet50_output_feature_map_size = resnet50_output_layer.output.shape[1]
+    efficient_net_b1_output_feature_map_size = efficient_net_b1_output_layer.output.shape[1]
     
 
     # calculate the total number of patches that will enter into the transformer
-    num_patches = (resnet50_output_feature_map_size//patch_size)**2
+    num_patches = (efficient_net_b1_output_feature_map_size//patch_size)**2
 
 
     #build the transformer
-    inputs = resnet50.input
+    inputs = cnn.input
 
     #pass the input through the cnn
     cnn_output_feature_map = cnn(inputs)
@@ -401,18 +399,9 @@ def get_embedding_model(projection_dim = 192, transformer_layers = 8, num_heads 
     
     #Get only the first element in the sequence for all batches and all neurons 
     transformer_output = encoded_patches[:, 0, :]
-    transformer_output = keras.layers.Dropout(0.5)(transformer_output)
+    transformer_output = keras.layers.Dropout(0.25)(transformer_output)
     
     #build the final mlp
-    outputs = keras.layers.Dense(1024, activation = 'relu')(transformer_output)
-    outputs = keras.layers.Dropout(0.5)(outputs)
-    
-    #set the output activation to linear since we will use either
-    #contrastive loss or triplet loss, and the distance metric is
-    #the euclidean distance
-    outputs = keras.layers.Dense(embedding_size, activation = 'linear')(outputs)
+    outputs = keras.layers.Dense(256, activation = 'relu')(transformer_output)
 
-    #normalize the embedding so that it lies on a unit hypersphere
-    outputs = L2Normalization()(outputs)
-    
-    return keras.models.Model(inputs = inputs, outputs = outputs)
+    return keras.models.Model(inputs = inputs, outputs = outputs, name = 'base_embedding_model')
