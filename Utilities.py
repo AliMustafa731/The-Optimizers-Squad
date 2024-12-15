@@ -303,7 +303,7 @@ def mlp(x, hidden_units, dropout_rate, projection_dim):
     return x
 
 
-def get_embedding_model(projection_dim = 128, transformer_layers = 5, num_heads = 12, transformer_units = [256], embedding_size = 128, patch_size = 1, cnn_feature_map_layer = 'top_activation', image_size = 128):
+def get_backbone_model(projection_dim = 128, transformer_layers = 5, num_heads = 12, transformer_units = [256], embedding_size = 128, patch_size = 1, cnn_feature_map_layer = 'top_activation', image_size = 128):
     """
         This function returns the main model that will be used
         to calculate the embeddings of faces.
