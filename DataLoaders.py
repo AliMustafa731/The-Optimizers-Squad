@@ -69,8 +69,11 @@ class DataLoaderTriplet(tf.keras.utils.Sequence):
             X2[i] = load_img(anchor, self.img_size)
             X3[i] = load_img(negative, self.img_size)
         
+        #shuffle the batch
+        shuffle_index = np.arange(0, self.batch_size, 1)
+        np.random.shuffle(shuffle_index)
         # since the model has three inputs, X1(postive), X2(anchor) and X3(negative) has to be grouped into a tuple.
-        return (X1, X2, X3)
+        return (X1[shuffle_index], X2[shuffle_index], X3[shuffle_index])
 
     # returns the number of batches in the dataset
     def __len__(self):
@@ -154,8 +157,12 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
             X2[i + num_p] = load_img(random.sample(person_3, 1)[0], self.img_size)
             Y[i + num_p] = 0
         
+        #shuffle the batch
+        shuffle_index = np.arange(0, self.batch_size, 1)
+        np.random.shuffle(shuffle_index)
+
         # Since the model has two inputs, X1 and X2 has to be grouped into a tuple.
-        return (X1, X2), Y
+        return (X1[shuffle_index], X2[shuffle_index]), Y[shuffle_index]
 
     # returns the number of batches in the dataset
     def __len__(self):
