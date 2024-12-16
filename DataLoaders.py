@@ -13,7 +13,7 @@ def load_img(path, img_size):
     image = keras.preprocessing.image.load_img(path)
     image_arr = keras.preprocessing.image.img_to_array(image)
     image_arr = tf.image.resize(image_arr, img_size)
-    return image_arr / 255
+    return image_arr
 
 
 # DataLoader for Triplet loss, used to train a Siamese Network
