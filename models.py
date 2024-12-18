@@ -1,5 +1,6 @@
 import keras
 import tensorflow as tf
+from keras import ops
 
 
 class L2Normalization(keras.Layer):
@@ -106,12 +107,12 @@ def mlp(x, hidden_units, dropout_rate, projection_dim):
     return x
 
 
-def get_backbone_model(projection_dim = 128, transformer_layers = 5, num_heads = 12, transformer_units = [256], embedding_size = 128, patch_size = 1, cnn_feature_map_layer = 'top_activation', image_size = 128):
+def get_backbone_model(projection_dim = 128, transformer_layers = 8, num_heads = 8, transformer_units = [512], patch_size = 4, cnn_feature_map_layer = 'conv3_block4_out', image_size = 128):
     """
         This function returns the main model that will be used
         to calculate the embeddings of faces.
 
-        The model used here relies on efficient_net_b1 for the cnn part
+        The model used here relies on resnet50 for the cnn part
         and a custom transformer encoder for the ViT part.
 
         It accepts images of size image_size and it returns an 
@@ -132,7 +133,7 @@ def get_backbone_model(projection_dim = 128, transformer_layers = 5, num_heads =
 
         patch_size: The number of pixels in each patch.
 
-        cnn_feature_map_layer: The efficient_net_b1 layer that will be used to extract
+        cnn_feature_map_layer: The resnet50 layer that will be used to extract
                                the feature map from and feed it into the
                                transformer.                 
     """
@@ -140,34 +141,38 @@ def get_backbone_model(projection_dim = 128, transformer_layers = 5, num_heads =
     #CNN part
     
     #get the cnn
-    efficient_net_b1 = keras.applications.EfficientNetV2B1(
+    resnet50 = keras.applications.ResNet50(
         include_top = False, 
-        input_shape = (image_size, image_size, 3)
+        input_shape = (image_size, image_size, 3),
     )
     
+    
     #get the output layer of the cnn that will be fed into the transformer
-    efficient_net_b1_output_layer = efficient_net_b1.get_layer(cnn_feature_map_layer)
-    efficient_net_b1_output = efficient_net_b1_output_layer.output
+    resnet50_output_layer = resnet50.get_layer(cnn_feature_map_layer)
+    resnet50_output = resnet50_output_layer.output
     
     #cut the cnn
-    cnn = keras.models.Model(inputs = efficient_net_b1.input, outputs = efficient_net_b1_output)
+    cnn = keras.models.Model(inputs = resnet50.input, outputs = resnet50_output)
 
     #transformer part
 
-    #get the size of the feature map output of efficient_net_b1, which will be the same
+    #get the size of the feature map output of resnet50, which will be the same
     #size of the input feature map into the transformer
-    efficient_net_b1_output_feature_map_size = efficient_net_b1_output_layer.output.shape[1]
+    resnet50_output_feature_map_size = resnet50_output_layer.output.shape[1]
     
 
     # calculate the total number of patches that will enter into the transformer
-    num_patches = (efficient_net_b1_output_feature_map_size//patch_size)**2
+    num_patches = (resnet50_output_feature_map_size//patch_size)**2
 
 
     #build the transformer
     inputs = cnn.input
 
+    #Add rescaling
+    rescaling = keras.layers.Rescaling(scale = 1.0/255)(inputs)
+
     #pass the input through the cnn
-    cnn_output_feature_map = cnn(inputs)
+    cnn_output_feature_map = cnn(rescaling)
     
     #patch the feature maps
     patches = Patches(patch_size)(cnn_output_feature_map)
@@ -201,10 +206,78 @@ def get_backbone_model(projection_dim = 128, transformer_layers = 5, num_heads =
         encoded_patches = keras.layers.Add()([x3, x2])
     
     #Get only the first element in the sequence for all batches and all neurons 
-    transformer_output = encoded_patches[:, 0, :]
-    transformer_output = keras.layers.Dropout(0.25)(transformer_output)
-    
+    # transformer_output = encoded_patches[:, 0, :]
+    transformer_output = keras.layers.Flatten()(encoded_patches)
     #build the final mlp
-    outputs = keras.layers.Dense(256, activation = 'relu')(transformer_output)
+    transformer_output = keras.layers.Dropout(0.25)(transformer_output)
+    outputs = keras.layers.Dense(512, activation = 'relu')(transformer_output)
 
-    return keras.models.Model(inputs = inputs, outputs = outputs, name = 'base_embedding_model')
+    return keras.models.Model(inputs = inputs, outputs = outputs, name = 'backbone_model')
+
+
+def get_embedding_model(backbone_model_weights_path, embedding_size = 128):
+    backbone_model = get_backbone_model()
+    backbone_model.load_weights(backbone_model_weights_path)
+
+    inputs = backbone_model.input
+    features = backbone_model(inputs)
+    embedding_output = keras.layers.Dense(embedding_size, activation = 'linear')(features)
+    normalized = L2Normalization()(embedding_output)
+    embedding_model = keras.models.Model(inputs = inputs, outputs = normalized)
+    return embedding_model
+
+
+def euclidean_distance(vectors):
+    """Find the Euclidean distance between two vectors.
+
+    Arguments:
+        vectors: List containing two tensors of same length.
+
+    Returns:
+        Tensor containing euclidean distance
+        (as floating point value) between vectors.
+    """
+
+    x, y = vectors
+    sum_square = ops.sum(ops.square(x - y), axis=1, keepdims=True)
+    return ops.sqrt(ops.maximum(sum_square, keras.backend.epsilon()))
+
+
+def contrastive_loss(margin = 1):
+
+    def c_loss(y_true, y_pred):
+        """Calculates the contrastive loss.
+
+            Arguments:
+                y_true: List of labels, each label is of type float32.
+                y_pred: List of predictions of same length as of y_true,
+                        each label is of type float32.
+
+            Returns:
+                A tensor containing contrastive loss as floating point value.
+        """
+        y_true = tf.cast(y_true, y_pred.dtype) #cast them to the same type to avoid errors
+
+        square_pred = ops.square(y_pred)
+        margin_square = ops.square(ops.maximum(margin - (y_pred), 0))
+        return ops.mean((1 - y_true) * square_pred + (y_true) * margin_square)
+
+    return c_loss
+
+
+
+def get_siamese_model(backbone_weights_path, image_size = 128):
+    embedding_model = get_embedding_model(backbone_weights_path)
+
+    input1 = keras.layers.Input(shape = (image_size, image_size, 3))
+    input2 = keras.layers.Input(shape = (image_size, image_size, 3))
+
+    embedding_1 = embedding_model(input1)
+    embedding_2 = embedding_model(input2)
+
+    distance = keras.layers.Lambda(euclidean_distance, output_shape = (1,))(
+        [embedding_1, embedding_2]
+    )
+    
+    siamese = keras.models.Model(inputs = [input1, input2], outputs = distance)
+    return siamese
