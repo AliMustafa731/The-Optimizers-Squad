@@ -9,20 +9,20 @@ import tensorflow as tf, keras, numpy as np, random
 """
 
 # load an image from a file specified by 'path', returns numpy array
-def load_img(path, img_size):
+def load_img(path, image_size):
     image = keras.preprocessing.image.load_img(path)
     image_arr = keras.preprocessing.image.img_to_array(image)
-    image_arr = tf.image.resize(image_arr, img_size)
+    image_arr = tf.image.resize(image_arr, image_size)
     return image_arr
 
 
 # DataLoader for Triplet loss, used to train a Siamese Network
 class DataLoaderTriplet(tf.keras.utils.Sequence):
 
-    def __init__(self, dataset_root_path, batch_size, img_size=(250, 250), *args, **kwargs):
+    def __init__(self, dataset_root_path, batch_size, image_size=(250, 250), *args, **kwargs):
         super().__init__(**kwargs)
         
-        self.img_size = img_size
+        self.image_size = image_size
         self.batch_size = batch_size
 
         self.dataset_root_path = dataset_root_path
@@ -45,9 +45,9 @@ class DataLoaderTriplet(tf.keras.utils.Sequence):
     def __getitem__(self, n):
 
         # allocate memory for the batch
-        X1 = np.zeros((self.batch_size, self.img_size[1], self.img_size[0], 3))
-        X2 = np.zeros((self.batch_size, self.img_size[1], self.img_size[0], 3))
-        X3 = np.zeros((self.batch_size, self.img_size[1], self.img_size[0], 3))
+        X1 = np.zeros((self.batch_size, self.image_size[1], self.image_size[0], 3))
+        X2 = np.zeros((self.batch_size, self.image_size[1], self.image_size[0], 3))
+        X3 = np.zeros((self.batch_size, self.image_size[1], self.image_size[0], 3))
 
         # get two sub-batches
         i = n * self.batch_size
@@ -65,9 +65,9 @@ class DataLoaderTriplet(tf.keras.utils.Sequence):
             positive = person_1_images[1]
             negative = random.sample(person_2, 1)[0]
             
-            X1[i] = load_img(positive, self.img_size)
-            X2[i] = load_img(anchor, self.img_size)
-            X3[i] = load_img(negative, self.img_size)
+            X1[i] = load_img(positive, self.image_size)
+            X2[i] = load_img(anchor, self.image_size)
+            X3[i] = load_img(negative, self.image_size)
         
         #shuffle the batch
         shuffle_index = np.arange(0, self.batch_size, 1)
@@ -89,10 +89,10 @@ class DataLoaderTriplet(tf.keras.utils.Sequence):
 class DataLoaderContrastive(tf.keras.utils.Sequence):
     
     # the argument (positive_ratio): positive to negative ratio of pairs for each batch, must be in range [0.0, 1.0]
-    def __init__(self, dataset_root_path, batch_size, positive_ratio, img_size=(250, 250), *args, **kwargs):
+    def __init__(self, dataset_root_path, batch_size, positive_ratio, image_size=(250, 250), *args, **kwargs):
         super().__init__(**kwargs)
         
-        self.img_size = img_size
+        self.image_size = image_size
         self.batch_size = batch_size
 
         self.dataset_root_path = dataset_root_path
@@ -126,8 +126,8 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
     def __getitem__(self, n):
 
         # allocate memory for the batch
-        X1 = np.zeros((self.batch_size, self.img_size[1], self.img_size[0], 3))
-        X2 = np.zeros((self.batch_size, self.img_size[1], self.img_size[0], 3))
+        X1 = np.zeros((self.batch_size, self.image_size[1], self.image_size[0], 3))
+        X2 = np.zeros((self.batch_size, self.image_size[1], self.image_size[0], 3))
         Y = np.zeros((self.batch_size, 1))
 
         # get three sub-batches
@@ -144,18 +144,18 @@ class DataLoaderContrastive(tf.keras.utils.Sequence):
             person_1 = sub_batch_1[i]
 
             person_1_images = random.sample(person_1, 2)
-            X1[i] = load_img(person_1_images[0], self.img_size)
-            X2[i] = load_img(person_1_images[1], self.img_size)
-            Y[i] = 1
+            X1[i] = load_img(person_1_images[0], self.image_size)
+            X2[i] = load_img(person_1_images[1], self.image_size)
+            Y[i] = 0
 
         # make another sub-batch of dissimilar pairs
         for i in range(num_n):
             person_2 = sub_batch_2[i]
             person_3 = sub_batch_3[i]
 
-            X1[i + num_p] = load_img(random.sample(person_2, 1)[0], self.img_size)
-            X2[i + num_p] = load_img(random.sample(person_3, 1)[0], self.img_size)
-            Y[i + num_p] = 0
+            X1[i + num_p] = load_img(random.sample(person_2, 1)[0], self.image_size)
+            X2[i + num_p] = load_img(random.sample(person_3, 1)[0], self.image_size)
+            Y[i + num_p] = 1
         
         #shuffle the batch
         shuffle_index = np.arange(0, self.batch_size, 1)
