@@ -1,6 +1,4 @@
 import os
-os.environ["TF_CPP_MIN_LOG_LEVEL"] = "1" #to suppress some unnecessary warnings
-
 import tensorflow as tf, keras, numpy as np, random
 
 
