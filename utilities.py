@@ -1,5 +1,6 @@
 from sklearn.metrics import roc_curve
-import pandas as pd, numpy as np
+import pandas as pd, numpy as np, os
+from models import get_compiled_siamese_model
 
 #found from stack overflow
 def find_optimal_cutoff(target, predicted):
@@ -21,3 +22,11 @@ def find_optimal_cutoff(target, predicted):
     roc_t = roc.iloc[(roc.tf-0).abs().argsort()[:1]]
 
     return list(roc_t['threshold'])
+
+
+siamese_model = get_compiled_siamese_model()
+siamese_model.load_weights(os.path.join('Data', 'Models', 'Fine tuned model using LFW', 'model.weights.h5'))
+def get_distance_between_faces(face_image1, face_image2):
+    prediction = siamese_model.predict(x = [np.expand_dims(face_image1, axis = 0), np.expand_dims(face_image2, axis = 0)])    
+    return prediction[0]
+
