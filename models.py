@@ -215,9 +215,10 @@ def get_backbone_model(projection_dim = 128, transformer_layers = 8, num_heads =
     return keras.models.Model(inputs = inputs, outputs = outputs, name = 'backbone_model')
 
 
-def get_embedding_model(backbone_model_weights_path, embedding_size = 128):
+def get_embedding_model(backbone_model_weights_path = None, embedding_size = 128):
     backbone_model = get_backbone_model()
-    backbone_model.load_weights(backbone_model_weights_path)
+    if backbone_model_weights_path != None:
+        backbone_model.load_weights(backbone_model_weights_path)
 
     inputs = backbone_model.input
     features = backbone_model(inputs)
@@ -266,14 +267,31 @@ def contrastive_loss(margin = 1):
 
 
 
-def get_siamese_model(backbone_weights_path, image_size = 128):
-    embedding_model = get_embedding_model(backbone_weights_path)
+def get_siamese_model(backbone_weights_path = None, image_size = 128, with_augmentation = False):
+    if backbone_weights_path != None:
+        embedding_model = get_embedding_model(backbone_weights_path)
+    else:
+        embedding_model = get_embedding_model()
 
     input1 = keras.layers.Input(shape = (image_size, image_size, 3))
     input2 = keras.layers.Input(shape = (image_size, image_size, 3))
 
-    embedding_1 = embedding_model(input1)
-    embedding_2 = embedding_model(input2)
+    if with_augmentation:
+        augmentor = keras.models.Sequential([
+            keras.layers.RandomFlip(),
+            keras.layers.RandomBrightness(factor = 0.1),
+            keras.layers.RandomContrast(factor = 0.1),
+            keras.layers.RandomRotation(factor = 0.02),
+            keras.layers.RandomZoom(height_factor = 0.05, width_factor = 0.05)
+        ], name = 'augmentor')
+
+        augmented1 = augmentor(input1)
+        augmented2 = augmentor(input2)
+        embedding_1 = embedding_model(augmented1)
+        embedding_2 = embedding_model(augmented2)
+    else:
+        embedding_1 = embedding_model(input1)
+        embedding_2 = embedding_model(input2)
 
     distance = keras.layers.Lambda(euclidean_distance, output_shape = (1,))(
         [embedding_1, embedding_2]
@@ -281,3 +299,15 @@ def get_siamese_model(backbone_weights_path, image_size = 128):
     
     siamese = keras.models.Model(inputs = [input1, input2], outputs = distance)
     return siamese
+
+
+def get_compiled_siamese_model():
+    siamese_model = get_siamese_model(with_augmentation = False)
+
+    siamese_model.compile(
+        loss = contrastive_loss(),
+        optimizer = keras.optimizers.Adam(learning_rate = 0.0001, weight_decay = 0.0001),
+        metrics = ['accuracy']
+    )
+
+    return siamese_model
