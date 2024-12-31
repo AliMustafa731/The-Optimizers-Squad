@@ -2,3 +2,4 @@
 !*.py
 !*.ipynb
 !.gitignore
+!requirements.txt
