@@ -1,6 +1,5 @@
 from sklearn.metrics import roc_curve
 import pandas as pd, numpy as np, os
-from models import get_compiled_siamese_model
 
 #found from stack overflow
 def find_optimal_cutoff(target, predicted):
