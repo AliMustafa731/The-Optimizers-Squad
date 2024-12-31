@@ -301,7 +301,7 @@ def get_siamese_model(backbone_weights_path = None, image_size = 128, with_augme
     return siamese
 
 
-def get_compiled_siamese_model():
+def get_compiled_siamese_model(weights_path = None):
     siamese_model = get_siamese_model(with_augmentation = False)
 
     siamese_model.compile(
@@ -309,5 +309,8 @@ def get_compiled_siamese_model():
         optimizer = keras.optimizers.Adam(learning_rate = 0.0001, weight_decay = 0.0001),
         metrics = ['accuracy']
     )
+
+    if weights_path != None:
+        siamese_model.load_weights(filepath = weights_path)
 
     return siamese_model
