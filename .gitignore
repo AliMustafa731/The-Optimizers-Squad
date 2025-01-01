@@ -1,5 +1,6 @@
-*
+*.*
 !*.py
 !*.ipynb
 !.gitignore
 !requirements.txt
+external/**
