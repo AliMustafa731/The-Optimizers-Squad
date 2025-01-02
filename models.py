@@ -205,8 +205,7 @@ def get_backbone_model(projection_dim = 128, transformer_layers = 8, num_heads =
         #skip connection 2
         encoded_patches = keras.layers.Add()([x3, x2])
     
-    #Get only the first element in the sequence for all batches and all neurons 
-    # transformer_output = encoded_patches[:, 0, :]
+
     transformer_output = keras.layers.Flatten()(encoded_patches)
     #build the final mlp
     transformer_output = keras.layers.Dropout(0.25)(transformer_output)
